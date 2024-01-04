@@ -1,0 +1,106 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title> Joguinho :D </title>
+
+        <style>
+            body {
+                background-color: #0d1117;
+            }
+
+            #screen {
+                border: 10px solid #1d2633;
+
+                image-rendering: pixelated;
+                image-rendering: crip-edges;
+                image-rendering: -moz-crisp-edges;
+
+                width: 700px;
+                height: 700px;
+            }
+
+            div.screen {
+                width: 100%;
+                height:100%;
+
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="screen"> 
+            <canvas id="screen" width=10 height=10> </canvas>
+        </div>
+
+        <script type="module">
+        import renderScreen from "./render-screen.js"
+        import createKeyboardListener from "./keyboard-listener.js"
+        import createGame from "./game.js"
+        import {createMiddleware} from "./utils.js"
+        import {io} from "https://cdn.socket.io/4.7.2/socket.io.esm.min.js"
+
+        // Data Structure
+        const game = createGame()
+
+        // Input
+        const keyboardEventEmmiter = createKeyboardListener(document, game).eventEmmiter
+
+        // Renderer
+        const screen = document.getElementById("screen")
+        const ctx = screen.getContext("2d")
+
+        // Network
+        const socket = io()
+
+        // Connecting To Server & Defining Client Player
+        socket.on("connect", () => {
+            const playerId = socket.id
+            game.setCurrentPlayer(playerId)
+
+            console.log(`> Player (${playerId}) connected to Server`)
+        })
+
+        // Initializing Game
+        socket.on("setup", (serverGameStatus) => {
+            // Setting Game State
+            game.setState(serverGameStatus)
+            console.log("Setup Done!")
+
+            // Updating Canvas Screen
+            screen.height = serverGameStatus.canvas.height
+            screen.width = serverGameStatus.canvas.width
+            
+            // Initializing Input and Input-Online-Emitting
+            keyboardEventEmmiter.subscribe("commandEmmited", (command) => {
+                game.movePlayer(command)
+            })
+
+            keyboardEventEmmiter.subscribe("commandEmmited", (command) => {
+                socket.emit("online-event", {eventType:"move-player", command})
+            })
+
+            // Updating Game State When Server Emits an Game Event
+            socket.on("online-event", ({eventType, command}) => {
+                if (command.playerId == game.localData.currentPlayerId) return
+                
+                console.log(`> Event Received: ${eventType}`)
+                game.onlineEventsFunctions[eventType](command)
+            })
+
+            // Start Renderization
+            renderScreen(ctx, game, requestAnimationFrame);
+        })
+
+        socket.on("disconnect", () => {
+            socket.removeAllListeners("online-event")
+            keyboardEventEmmiter.unsubscribeAll("commandEmmited")
+            
+            game.setCurrentPlayer(undefined)
+        })
+
+
+        </script>
+    </body>
+</html>
